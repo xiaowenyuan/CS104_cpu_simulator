@@ -12,6 +12,7 @@ class Memory:
         for i in range(0, 256,4): 
             self.memory_addresses[i] = None
             debugprint(f'Memory address {i} is initialised with an initial value of {self.memory_addresses[i]}')
+        self.cache_active = False
     
     def store_into_memory(self, address, value_to_store):
         self.memory_addresses[address] = value_to_store 
@@ -51,6 +52,63 @@ class Memory:
             self.store_into_memory(selected_memory, instruction_object)
         print('Instructions are successfully loaded into memory.')
 
+class CacheEntry:
+    def __init__(self, tag, data):
+        self.tag = tag
+        self.data = data
+
+    def __repr__(self):
+        return f'{self.tag} : {self.data}'
+
+class Cache:
+    def __init__(self, cache_size = 4):
+        self.cache_bank = []
+        self.cache_size = cache_size
+        debugprint(f'Cache of size {self.cache_size} is initialised.')
+        self.fifo_index = 0 
+        
+    def store_into_cache(self, address, value_to_store, main_memory):
+        # check if memory address already exists as a tag in cache
+        for cache_entry in self.cache_bank:
+            if cache_entry.tag == address:
+                debugprint(f'Memory address {address} already exists in cache. The cache for memory address {address} will be updated with the data {value_to_store}.')
+                cache_entry.data = value_to_store
+                return
+        if len(self.cache_bank) + 1 > self.cache_size:
+            debugprint(f'As cache size {self.cache_size} is reached, replacement policy will be implemented.')
+            self.replace_entry(address, value_to_store, main_memory)
+        else: 
+            self.cache_bank.append(CacheEntry(address, value_to_store))
+        debugprint(f'Memory address {address} with data {value_to_store} is cached.')
+    
+    def replace_entry(self, address, value_to_store, main_memory):
+        cache_entry = self.cache_bank[self.fifo_index]
+        # Write the cache data into main memory before it's replaced
+        debugprint(f'Writing cache data {cache_entry.data} into main memory address {cache_entry.tag} prior to replacement.')
+        main_memory.store_into_memory(cache_entry.tag, cache_entry.data)
+        cache_entry.tag = address
+        cache_entry.data = value_to_store
+        debugprint(f'Cache data has been replaced with {cache_entry.tag} : {cache_entry.data}')
+        self.fifo_index += 1 
+        debugprint(f'Cache FIFO index is now {self.fifo_index}')
+        if self.fifo_index >= self.cache_size: 
+            self.fifo_index = 0 
+            debugprint(f'Cache FIFO index is restarted to 0')
+
+    def load_from_cache(self, address):
+        for cache_entry in self.cache_bank:
+            if cache_entry.tag == address:
+                debugprint(f'Cache hit for memory address {address}!')
+                return cache_entry.data
+        debugprint(f'Cache miss for memory address {address}!')
+        return None
+    
+    def print_cache(self):
+        print(f'\nPrinting cache')
+        for cache_entry in self.cache_bank:
+            print(cache_entry)
+
+        
 # Instruction class--each line of instruction is turned into an instruction object 
 class Instruction:
     def __init__(self, instruction_str):
@@ -148,7 +206,7 @@ class Instruction:
         elif self.opcode == 'CACHE':
             if len(instruction_list) != 2:
                 raise ValueError('Invalid instruction length.')
-            self.cache_bool = instruction_list[-1]
+            self.cache_bool = int(instruction_list[-1])
         elif self.opcode =='HALT':
             if len(instruction_list) > 2:
                 raise ValueError('Invalid instruction length.') 
@@ -201,8 +259,9 @@ class Program_Counter:
     def see_count(self):
         return self.value
 
-def control(program_counter, memory, gpr):
-    while program_counter.see_count() <= len(memory.memory_addresses)*4 - 4:
+def control(program_counter, memory, cache, gpr):
+    stop_count = len(memory.memory_addresses)*4 - 4
+    while program_counter.see_count() <= stop_count:
         # The instruction register will fetch data in the memory that the PC is pointing at
         debugprint(f'\nThe PC points at memory address {program_counter.see_count()} and will fetch the data stored therein.')
         fetched_data = memory.load_from_memory(program_counter.see_count())
@@ -377,7 +436,6 @@ def control(program_counter, memory, gpr):
                     # Fetch target address 
                     target_address = fetched_instruction.address
                     debugprint(f'The target address is {target_address} * 4. The address to jump to in the Memory Address is {target_address * 4}')
-                    debugprint(f'PC + 4 {program_counter.see_count() + 4} will be stored in $ra (R31).')
                     pc_increment = program_counter.see_count() + 4
                     gpr.store_into_GPR(31, pc_increment)
                     program_counter.jump_count(target_address * 4)
@@ -392,22 +450,55 @@ def control(program_counter, memory, gpr):
                         memory_address += fetched_instruction.offset
                     debugprint(f'The Control will fetch the data stored in memory address {memory_address}')
                     # Load the data from the memory address pointed by the Memory Address into the Data Register, and then into Rd 
-                    data_register = memory.load_from_memory(memory_address)
+                    # Check if cache memory is active
+                    data_register = None
+                    if memory.cache_active: 
+                        debugprint(f'As cache is active, the Control will check if the memory address exists in the cache')
+                        # Check if cache.load_from_cache(memory_address) is not None
+                        data_register = cache.load_from_cache(memory_address)
+                        if data_register:
+                            # fetch cache data 
+                            debugprint(f'The memory address {memory_address} is found in cache. The Control will fetch the data from cache.')
+                        else:
+                            # if cache.load_from_cache(memory_address) returns None, fetch data from main memory and write to cache
+                            debugprint(f'The memory address {memory_address} is NOT found in cache. The Control will fetch the data from main memory and write the data to cache.')
+                            data_register = memory.load_from_memory(memory_address)
+                            cache.store_into_cache(memory_address, data_register,memory)
+                    else:
+                        # if cache memory is not active, fetch data from main memory
+                        debugprint(f'As cache is NOT active, the Control will fetch the data from the main memory.')
+                        data_register = memory.load_from_memory(memory_address)
                     destination_register = fetched_instruction.rd
                     debugprint(f'The Control will save {data_register} into register {destination_register}')
                     gpr.store_into_GPR(destination_register, data_register)
                     program_counter.increment_count(4)
                 case 'SW':
                     # Pass in the Memory address the address stored in register Rt + offset
-                    memory_address = fetched_instruction.rt
+                    rt = fetched_instruction.rt
+                    memory_address = gpr.load_from_GPR(rt)
                     if fetched_instruction.offset != None:
                         memory_address += fetched_instruction.offset
                     debugprint(f'The memory address stored in register {fetched_instruction.rt} (with applicable offset) is {memory_address}')
                     # Pass into Data Register the data in Rs 
                     data_register = gpr.load_from_GPR(fetched_instruction.rs)
                     debugprint(f'The data {data_register} has been fetched from register {fetched_instruction.rs}')
-                    # Save the data in Data Register into the address pointed by the Memory Address
-                    memory.store_into_memory(memory_address,data_register)
+                    # Check if cache is turned on
+                    if memory.cache_active: 
+                        debugprint(f'As cache is turned on, the data {data_register} will be stored in cache tagged with the memory address {memory_address}')
+                        # Write the data to cache
+                        cache.store_into_cache(memory_address, data_register,memory)
+                    else:
+                        # Save the data in Data Register into the address pointed by the Memory Address
+                        debugprint(f'As cache is turned off, the data {data_register} will be stored in the main memory address {memory_address}')
+                        memory.store_into_memory(memory_address,data_register)
+                    program_counter.increment_count(4)
+                case 'CACHE':
+                    if fetched_instruction.cache_bool == 1:
+                        memory.cache_active = True 
+                        debugprint('Cache memory is activated.')
+                    elif fetched_instruction.cache_bool == 0:
+                        memory.cache_active = False
+                        debugprint('Cache memory is deactivated.')
                     program_counter.increment_count(4)
                 case 'HALT':
                     debugprint(f'The program is terminated due to the HALT instruction')
@@ -415,78 +506,19 @@ def control(program_counter, memory, gpr):
         else:
             debugprint(f'The fetched data from memory address {program_counter.see_count()} is not an instruction. The PC will increment.')
             program_counter.increment_count(4)
-    if program_counter.see_count() >len(memory.memory_addresses)*4 - 4:
+    if program_counter.see_count() >stop_count:
         debugprint(f'The Program Counter has reached count {program_counter.see_count()}.')
         debugprint(f'The Control has inspected all memory addresses. The program now ends.')
 
-# Initialise PC 
+if __name__ == '__main__':
+    # Initialise PC 
+    pc = Program_Counter()
 
-pc = Program_Counter()
+    # Initialise Memory
+    main_memory = Memory()
 
-# Initialise Memory
+    # Initialise Cache
+    cache_memory = Cache()
 
-memory = Memory()
-
-# Initialise GPR 
-
-gpr = GPR()
-
-# Tests
-
-# make a test instruction 
-
-test_add_instruction = Instruction('ADD,1,4,5')
-test_sub_instruction = Instruction('SUB,2,1,5')
-test_mult_instruction = Instruction('MULT,3,5,1')
-test_and_instruction = Instruction('AND,8,5,3')
-test_or_instruction = Instruction('OR,2,1,3')
-test_slt1_instruction = Instruction('SLT,10,4,5')
-test_slt2_instruction = Instruction('SLT,11,3,5')
-test_beq_instruction = Instruction('BEQ,2,4,5')
-test_addi_instruction = Instruction('ADDI,13,0,987')
-test_andi_instruction = Instruction('ANDI,14,3,1000')
-test_ori_instruction = Instruction('ORI,12,13,100')
-test_jump_instruction = Instruction('J,15')
-test_jal_instruction = Instruction('JAL,25')
-test_jr_instruction = Instruction('JR,31')
-test_lw_instruction = Instruction('LW,20,114(3)')
-test_lw2_instruction = Instruction('LW,22,21')
-test_sw_instruction = Instruction('SW,22,127(5)')
-test_halt_instruction = Instruction('HALT')
-# add test instruction into memory 
-
-memory.store_into_memory(0,test_add_instruction)
-memory.store_into_memory(4,test_sub_instruction)
-memory.store_into_memory(8,'Random data 1234')
-memory.store_into_memory(16,test_mult_instruction)
-memory.store_into_memory(20,test_and_instruction)
-memory.store_into_memory(24,test_or_instruction)
-memory.store_into_memory(28,test_slt1_instruction)
-memory.store_into_memory(32,test_slt2_instruction)
-memory.store_into_memory(36,test_beq_instruction)
-memory.store_into_memory(40,test_addi_instruction)
-memory.store_into_memory(44,test_andi_instruction)
-memory.store_into_memory(48,test_ori_instruction)
-memory.store_into_memory(52,test_jal_instruction)
-memory.store_into_memory(100,test_lw_instruction)
-memory.store_into_memory(104,test_jr_instruction)
-memory.store_into_memory(56,test_lw2_instruction)
-memory.store_into_memory(60,test_lw2_instruction)
-memory.store_into_memory(64,test_sw_instruction)
-memory.store_into_memory(72,test_halt_instruction)
-memory.store_into_memory(200,5000)
-memory.store_into_memory(240,'Random data 987')
-memory.store_into_memory(120,10000)
-
-# add test data into GPR
-
-gpr.store_into_GPR(4,1)
-gpr.store_into_GPR(5,2)
-gpr.store_into_GPR(21,240)
-
-# Addition test 
-
-
-control(pc, memory, gpr)
-gpr.print_register()
-memory.print_memory()
+    # Initialise GPR 
+    gpr = GPR()
