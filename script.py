@@ -20,6 +20,11 @@ class Memory:
     def load_from_memory(self, address):
         debugprint(f'Loading {self.memory_addresses[address]} from memory address {address}')
         return self.memory_addresses[address]
+    
+    def print_memory(self):
+        print(f'\nPrinting memory')
+        for key,value in self.memory_addresses.items():
+            print(f'{key}: {value}')
         
     # This method selects a free memory in which data or instructions can be stored.
     # Assumption: for every simulation run, the 256 memory addresses cannot be exhausted. 
@@ -76,7 +81,7 @@ class Instruction:
                 self.rs = int(instruction_list[2])
                 self.rt = int(instruction_list[3])
             except:
-                print(f'Inappropriate instruction format following OPCODE; should be an integer.')
+                raise ValueError(f'Inappropriate instruction format following OPCODE; should be an integer.')
         elif self.opcode in operations_constant_list:
             if len(instruction_list) != 4:
                 raise ValueError('Invalid instruction length.')
@@ -85,21 +90,21 @@ class Instruction:
                 self.rs = int(instruction_list[2])
                 self.constant = int(instruction_list[3])
             except:
-                print(f'Inappropriate instruction format following OPCODE; should be an integer.')
+                raise ValueError(f'Inappropriate instruction format following OPCODE; should be an integer.')
         elif self.opcode in jumps_list:
             if len(instruction_list) != 2:
                 raise ValueError('Invalid instruction length.')
             try:
                 self.address = int(instruction_list[-1])
             except:
-                print(f'Inappropriate instruction format following OPCODE; should be an integer.')
+                raise ValueError(f'Inappropriate instruction format following OPCODE; should be an integer.')
         elif self.opcode == 'JR':
             if len(instruction_list) != 2:
                 raise ValueError('Invalid instruction length.')
             try:
                 self.address = int(instruction_list[-1])
             except:
-                print(f'Inappropriate instruction format following OPCODE; should be an integer.')
+                raise ValueError(f'Inappropriate instruction format following OPCODE; should be an integer.')
             if self.address != 31: 
                 raise ValueError('Invalid register address. JR OPCODE should operate on $ra (R31).')
         elif self.opcode == 'BNE' or self.opcode =='BEQ':
@@ -110,29 +115,36 @@ class Instruction:
                 self.rt = int(instruction_list[2])
                 self.offset = int(instruction_list[3])
             except:
-                print(f'Inappropriate instruction format following OPCODE; should be an integer.')
+                raise ValueError(f'Inappropriate instruction format following OPCODE; should be an integer.')
         elif self.opcode == 'LW':
             if len(instruction_list) != 3:
                 raise ValueError('Invalid instruction length.')
             try:
                 self.rd = int(instruction_list[1])
-                memory_instruction_list = instruction_list[-1].split('(')
-                memory_instruction_list_stripped = memory_instruction_list.strip('()')
-                self.offset = int(memory_instruction_list_stripped[0])
-                self.rs = int(memory_instruction_list_stripped[-1])
+                if '(' in instruction_list[-1]:
+                    memory_instruction_list = instruction_list[-1].split('(')
+                    debugprint(memory_instruction_list)
+                    memory_instruction_list_stripped = memory_instruction_list[-1].strip('()')
+                    self.offset = int(memory_instruction_list[0])
+                    self.rs = int(memory_instruction_list_stripped)
+                else:
+                    self.rs = int(instruction_list[-1])
             except:
-                print(f'Inappropriate instruction format following OPCODE; should be an integer.')
+                raise ValueError(f'Inappropriate instruction format following OPCODE; should be an integer.')
         elif self.opcode == 'SW':
             if len(instruction_list) != 3:
                 raise ValueError('Invalid instruction length.')
             try:
                 self.rs = int(instruction_list[1])
-                memory_instruction_list = instruction_list[-1].split('(')
-                memory_instruction_list_stripped = memory_instruction_list.strip('()')
-                self.offset = int(memory_instruction_list_stripped[0])
-                self.rt = int(memory_instruction_list_stripped[-1])
+                if '(' in instruction_list[-1]:
+                    memory_instruction_list = instruction_list[-1].split('(')
+                    memory_instruction_list_stripped = memory_instruction_list[-1].strip('()')
+                    self.offset = int(memory_instruction_list[0])
+                    self.rt = int(memory_instruction_list_stripped)
+                else:
+                    self.rt = int(instruction_list[-1])
             except:
-                print(f'Inappropriate instruction format following OPCODE; should be an integer.')
+                raise ValueError(f'Inappropriate instruction format following OPCODE; should be an integer.')
         elif self.opcode == 'CACHE':
             if len(instruction_list) != 2:
                 raise ValueError('Invalid instruction length.')
@@ -373,8 +385,32 @@ def control(program_counter, memory, gpr):
                     target_address = gpr.load_from_GPR(31)
                     debugprint(f'The Program Counter will be reset back to the memory address stored in $ra (R31), which is {target_address}')
                     program_counter.jump_count(target_address)
+                case 'LW':
+                    # Pass into the Memory Address the address stored in register Rs + offset
+                    memory_address = gpr.load_from_GPR(fetched_instruction.rs)
+                    if fetched_instruction.offset != None:
+                        memory_address += fetched_instruction.offset
+                    debugprint(f'The Control will fetch the data stored in memory address {memory_address}')
+                    # Load the data from the memory address pointed by the Memory Address into the Data Register, and then into Rd 
+                    data_register = memory.load_from_memory(memory_address)
+                    destination_register = fetched_instruction.rd
+                    debugprint(f'The Control will save {data_register} into register {destination_register}')
+                    gpr.store_into_GPR(destination_register, data_register)
+                    program_counter.increment_count(4)
+                case 'SW':
+                    # Pass in the Memory address the address stored in register Rt + offset
+                    memory_address = fetched_instruction.rt
+                    if fetched_instruction.offset != None:
+                        memory_address += fetched_instruction.offset
+                    debugprint(f'The memory address stored in register {fetched_instruction.rt} (with applicable offset) is {memory_address}')
+                    # Pass into Data Register the data in Rs 
+                    data_register = gpr.load_from_GPR(fetched_instruction.rs)
+                    debugprint(f'The data {data_register} has been fetched from register {fetched_instruction.rs}')
+                    # Save the data in Data Register into the address pointed by the Memory Address
+                    memory.store_into_memory(memory_address,data_register)
+                    program_counter.increment_count(4)
                 case 'HALT':
-                    debugprint(f'The program will now end due to the HALT instruction')
+                    debugprint(f'The program is terminated due to the HALT instruction')
                     break
         else:
             debugprint(f'The fetched data from memory address {program_counter.see_count()} is not an instruction. The PC will increment.')
@@ -413,6 +449,9 @@ test_ori_instruction = Instruction('ORI,12,13,100')
 test_jump_instruction = Instruction('J,15')
 test_jal_instruction = Instruction('JAL,25')
 test_jr_instruction = Instruction('JR,31')
+test_lw_instruction = Instruction('LW,20,114(3)')
+test_lw2_instruction = Instruction('LW,22,21')
+test_sw_instruction = Instruction('SW,22,127(5)')
 test_halt_instruction = Instruction('HALT')
 # add test instruction into memory 
 
@@ -429,17 +468,25 @@ memory.store_into_memory(40,test_addi_instruction)
 memory.store_into_memory(44,test_andi_instruction)
 memory.store_into_memory(48,test_ori_instruction)
 memory.store_into_memory(52,test_jal_instruction)
+memory.store_into_memory(100,test_lw_instruction)
 memory.store_into_memory(104,test_jr_instruction)
-memory.store_into_memory(60,test_halt_instruction)
+memory.store_into_memory(56,test_lw2_instruction)
+memory.store_into_memory(60,test_lw2_instruction)
+memory.store_into_memory(64,test_sw_instruction)
+memory.store_into_memory(72,test_halt_instruction)
+memory.store_into_memory(200,5000)
+memory.store_into_memory(240,'Random data 987')
+memory.store_into_memory(120,10000)
 
 # add test data into GPR
 
 gpr.store_into_GPR(4,1)
 gpr.store_into_GPR(5,2)
+gpr.store_into_GPR(21,240)
 
 # Addition test 
 
 
 control(pc, memory, gpr)
 gpr.print_register()
-
+memory.print_memory()
