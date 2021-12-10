@@ -6,6 +6,16 @@ For ths portfolio project, Codecademy wants us to build a Python program that si
 
 As this program uses Pattern Matching, Python 3.10.0 (or later) is required to run it.
 
+## How to run this program
+
+Run `script.py` and then type the `.txt` file name containing the instructions. Codecademy provided `instruction_input.txt` while I have also made a longer instructions file called `try_me.txt`. 
+
+The Command Line Interface also takes in an optional argument `-d` or `--debug__print`. If the integer `0` is added as argument, the default debug print function will be turned off. The debug print is meant to provide an explanation into the working of the simulation. Without the debug print, `script.py` will only print out the resulting main memory, GPR, and cache memory.
+
+Two test files called `test1.py` and `test2.py` can also be run to simulate more instructions--no external `.txt` file is required to run these as the registers and the main memory are already preprogrammed with some data. `test2.py` in particular gives a good overview of how the cache simulation works.
+
+Any error in instruction fetching or parsing, or memory accessing will terminate the program.
+
 ## Design
 
 `script.py` contains simulation of the CPU's Control function, Program Counter (PC), main memory, GPR, and cache memory. 
@@ -62,15 +72,7 @@ Please note that valid instructions require the OPCODE and the different operand
 
 * HALT(`HALT`)
 
-## How to run this program
-
-Run `script.py` and then type the `.txt` file name containing the instructions. Codecademy provided `instruction_input.txt` while I have also made a longer instructions file called `try_me.txt`. 
-
-The Command Line Interface also takes in an optional argument `-d` or `--debug__print`. If the integer `0` is added as argument, the default debug print function will be turned off. The debug print is meant to provide an explanation into the working of the simulation. Without the debug print, `script.py` will only print out the resulting main memory, GPR, and cache memory.
-
-Two test files called `test1.py` and `test2.py` can also be run to simulate more instructions--no external `.txt` file is required to run these as the registers and the main memory are already preprogrammed with some data. `test2.py` in particular gives a good overview of how the cache simulation works.
-
-Any error in instruction fetching or parsing, or memory accessing will terminate the program.
+Any other OPCODE will be considered invalid and will terminate the program.
 
 ## Future improvements
 
