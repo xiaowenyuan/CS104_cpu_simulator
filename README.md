@@ -70,6 +70,8 @@ The Command Line Interface also takes in an optional argument `-d` or `--debug__
 
 Two test files called `test1.py` and `test2.py` can also be run to simulate more instructions--no external `.txt` file is required to run these as the registers and the main memory are already preprogrammed with some data. `test2.py` in particular gives a good overview of how the cache simulation works.
 
+Any error in instruction fetching or parsing, or memory accessing will terminate the program.
+
 ## Future improvements
 
 * Add ability to switch to different Cache write policies (ie write-back vs write-through). 
