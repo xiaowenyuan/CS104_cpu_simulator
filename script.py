@@ -52,7 +52,7 @@ class Memory:
             selected_memory = self.select_available_memory()
             instruction_object = Instruction(instruction)
             self.store_into_memory(selected_memory, instruction_object)
-        print('\nInstructions are successfully loaded into memory.')
+        print(f'\nInstructions from {file} are successfully loaded into memory.')
 
 class CacheEntry:
     def __init__(self, tag, data):
@@ -520,12 +520,6 @@ def control(program_counter, memory, cache, gpr):
         debugprint(f'\nThe Control has inspected all memory addresses. The program now ends.')
 
 if __name__ == '__main__':
-    # Initialise PC 
-    pc = Program_Counter()
-
-    # Initialise Memory
-    main_memory = Memory()
-
     # Run argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('instruction_file', help = "Name of .txt file that contains the MIPS instructions to be uploaded into the program")
@@ -535,6 +529,12 @@ if __name__ == '__main__':
     debug_bool = args.debug_print
     if debug_bool == 0:
         is_debug = False
+    
+    # Initialise PC 
+    pc = Program_Counter()
+
+    # Initialise Memory
+    main_memory = Memory()
     main_memory.load_instructions_into_memory(instruction_txt)
 
     # Initialise Cache
